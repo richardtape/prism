@@ -21,6 +21,8 @@ struct ContentView: View {
             Divider()
             transcriptSection
             Divider()
+            responseSection
+            Divider()
             actions
         }
         .padding(.top, 12)
@@ -53,7 +55,7 @@ struct ContentView: View {
             StatusRow(label: "Listening", value: appState.isListening ? "On" : "Paused")
             StatusRow(label: "Conversation", value: conversationStatusText)
             StatusRow(label: "Speaker", value: "--")
-            StatusRow(label: "LLM", value: "Not configured")
+            StatusRow(label: "LLM", value: appState.llmStatusText)
         }
         .font(.subheadline)
     }
@@ -84,6 +86,23 @@ struct ContentView: View {
             if !appState.statusMessage.isEmpty {
                 Text(appState.statusMessage)
                     .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var responseSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Last Response")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let lastResponse = appState.lastResponse, !lastResponse.isEmpty {
+                Text(lastResponse)
+                    .font(.footnote)
+                    .lineLimit(2)
+            } else {
+                Text("Waiting for response...")
+                    .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }

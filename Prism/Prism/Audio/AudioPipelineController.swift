@@ -16,6 +16,7 @@ final class AudioPipelineController {
     private let sttService: STTService
     private let conversationManager: ConversationManager
     private let defaultConversationState: ConversationState
+    private let orchestrationController: OrchestrationController?
 
     private var audioTask: Task<Void, Never>?
     private var sttTask: Task<Void, Never>?
@@ -23,16 +24,26 @@ final class AudioPipelineController {
     private var startupTask: Task<Void, Never>?
     private var isRunning = false
 
-    init(appState: AppState, settings: AudioSettings, conversationManager: ConversationManager) {
+    init(appState: AppState, settings: AudioSettings, conversationManager: ConversationManager, orchestrationController: OrchestrationController? = nil) {
         self.appState = appState
         self.audioCaptureService = AudioCaptureService()
         self.vadService = VADService(configuration: settings.vadConfiguration)
         self.sttService = STTService()
         self.conversationManager = conversationManager
+        self.orchestrationController = orchestrationController
         self.defaultConversationState = .closed(
             windowSeconds: settings.conversationWindowSeconds,
             maxTurns: settings.conversationMaxTurns
         )
+
+        conversationTask = Task { [weak self] in
+            guard let self else { return }
+            for await state in conversationManager.stateStream {
+                await MainActor.run {
+                    self.appState.conversationState = state
+                }
+            }
+        }
 
         audioCaptureService.onAudioLevel = { [weak self] level in
             Task { @MainActor in
@@ -60,15 +71,6 @@ final class AudioPipelineController {
             appState.conversationState = defaultConversationState
         }
 
-        conversationTask = Task { [weak self] in
-            guard let self else { return }
-            for await state in conversationManager.stateStream {
-                await MainActor.run {
-                    self.appState.conversationState = state
-                }
-            }
-        }
-
         startupTask = Task { [weak self] in
             guard let self else { return }
             guard self.isRunning else { return }
@@ -82,6 +84,12 @@ final class AudioPipelineController {
                             self.appState.lastTranscript = event.text
                         }
                         await self.conversationManager.acceptUtterance(event: event)
+                        if event.isFinal {
+                            await MainActor.run {
+                                self.appState.lastResponse = nil
+                            }
+                            self.orchestrationController?.handleFinalTranscript(event.text)
+                        }
                     }
                 }
 
@@ -147,8 +155,6 @@ final class AudioPipelineController {
         audioTask = nil
         sttTask?.cancel()
         sttTask = nil
-        conversationTask?.cancel()
-        conversationTask = nil
         startupTask?.cancel()
         startupTask = nil
 

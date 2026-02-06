@@ -19,7 +19,17 @@ struct AISettingsView: View {
     @State private var apiKey = ""
     @State private var modelOptions: [String] = []
     @State private var selectedModel = ""
+    private enum StatusKind {
+        case none
+        case success
+        case error
+    }
+
     @State private var statusText = ""
+    @State private var statusKind: StatusKind = .none
+    @State private var modelRefreshTask: Task<Void, Never>?
+    @State private var statusResetTask: Task<Void, Never>?
+    @State private var isFetchingModels = false
     @FocusState private var focusedField: FocusField?
     @State private var lastFocusedField: FocusField?
 
@@ -48,9 +58,7 @@ struct AISettingsView: View {
             .frame(maxWidth: 560)
 
             if !statusText.isEmpty {
-                Text(statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                statusView
             }
         }
         .task {
@@ -62,26 +70,59 @@ struct AISettingsView: View {
         .onChange(of: selectedModel) { _, _ in
             saveConfigIfPossible()
         }
+        .onChange(of: endpoint) { _, _ in
+            scheduleModelRefresh()
+        }
+        .onChange(of: apiKey) { _, _ in
+            scheduleModelRefresh()
+        }
+    }
+
+    private var statusView: some View {
+        Group {
+            if statusKind == .error {
+                HStack(spacing: 6) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.red)
+                    Text(statusText)
+                }
+            } else {
+                Text(statusText)
+            }
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 
     private var modelPicker: some View {
         Group {
             if endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Picker("Model", selection: $selectedModel) {
+                Picker("", selection: $selectedModel) {
                     Text("Enter an AI Endpoint").tag("")
                 }
+                .labelsHidden()
+                .accessibilityLabel("Model")
                 .disabled(true)
             } else {
-                Picker("Model", selection: $selectedModel) {
-                    Text("Choose Model").tag("")
-                    ForEach(modelOptions, id: \.self) { model in
+                let options = modelOptionsIncludingSelection()
+                Picker("", selection: $selectedModel) {
+                    Text(isFetchingModels ? "Loading models..." : "Choose Model").tag("")
+                    ForEach(options, id: \.self) { model in
                         Text(model).tag(model)
                     }
                 }
+                .labelsHidden()
+                .accessibilityLabel("Model")
             }
         }
         .pickerStyle(.menu)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func modelOptionsIncludingSelection() -> [String] {
+        let trimmed = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !modelOptions.contains(trimmed) else { return modelOptions }
+        return modelOptions + [trimmed]
     }
 
     private func handleFocusChange(_ newValue: FocusField?) {
@@ -102,11 +143,8 @@ struct AISettingsView: View {
             return
         }
 
-        // Phase 02+: fetch models from the endpoint's /v1/models.
-        // For now, provide placeholder options once an endpoint is present.
-        modelOptions = ["placeholder-model-1", "placeholder-model-2"]
-        if !modelOptions.contains(selectedModel) {
-            selectedModel = ""
+        Task {
+            await fetchModels()
         }
     }
 
@@ -124,15 +162,85 @@ struct AISettingsView: View {
         }
     }
 
-    private func saveConfigIfPossible() {
+    private func scheduleModelRefresh() {
+        modelRefreshTask?.cancel()
+        modelRefreshTask = Task {
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            await fetchModels()
+        }
+    }
+
+    @MainActor
+    private func fetchModels() async {
+        let trimmedEndpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedEndpoint.isEmpty else {
+            modelOptions = []
+            selectedModel = ""
+            return
+        }
+
+        let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else {
+            modelOptions = []
+            selectedModel = ""
+            statusText = "Enter an API key to fetch models."
+            statusKind = .none
+            return
+        }
+
+        do {
+            isFetchingModels = true
+            statusText = ""
+            statusKind = .none
+            let fileURL = try ConfigStore.defaultLocation()
+            let store = ConfigStore(fileURL: fileURL)
+            let client = LLMClient(configStore: store)
+            let models = try await client.listModels(endpoint: trimmedEndpoint, apiKey: trimmedKey)
+            modelOptions = models
+            if !selectedModel.isEmpty, !modelOptions.contains(selectedModel) {
+                selectedModel = ""
+            }
+            statusText = "AI models refreshed."
+            statusKind = .success
+            scheduleStatusReset()
+        } catch {
+            modelOptions = []
+            selectedModel = ""
+            statusText = "Unable to fetch models"
+            statusKind = .error
+            saveConfigIfPossible(suppressStatus: true)
+        }
+        isFetchingModels = false
+    }
+
+    @MainActor
+    private func scheduleStatusReset() {
+        statusResetTask?.cancel()
+        statusResetTask = Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            if statusText == "AI models refreshed." {
+                statusText = ""
+                statusKind = .none
+            }
+        }
+    }
+
+    private func saveConfigIfPossible(suppressStatus: Bool = false) {
         do {
             let fileURL = try ConfigStore.defaultLocation()
             let store = ConfigStore(fileURL: fileURL)
             let config = LLMConfig(endpoint: endpoint, apiKey: apiKey, model: selectedModel)
             try store.save(config)
-            statusText = ""
+            if !suppressStatus {
+                statusText = ""
+                statusKind = .none
+            }
+            NotificationCenter.default.post(name: .llmConfigUpdated, object: nil)
         } catch {
-            statusText = "Unable to save config yet."
+            if !suppressStatus {
+                statusText = "Unable to save config yet."
+                statusKind = .error
+            }
         }
     }
 }

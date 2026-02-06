@@ -20,6 +20,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var onboardingObserver: NSObjectProtocol?
     private var listeningObserver: AnyCancellable?
     private var audioPipelineController: AudioPipelineController?
+    private var orchestrationController: OrchestrationController?
+    private var llmConfigObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if isRunningTests {
@@ -33,12 +35,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configureStatusItem()
         configureAudioPipeline()
         registerOnboardingObserver()
+        registerLLMConfigObserver()
+        appState.refreshLLMStatus()
         maybeShowOnboarding()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         if let onboardingObserver {
             NotificationCenter.default.removeObserver(onboardingObserver)
+        }
+        if let llmConfigObserver {
+            NotificationCenter.default.removeObserver(llmConfigObserver)
         }
         listeningObserver?.cancel()
     }
@@ -68,11 +75,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             maxTurns: settings.conversationMaxTurns,
             closingDetector: closingDetector
         )
+        let registry = SkillRegistry(queue: (try? Database().queue))
+        let orchestrationPipeline = OrchestrationPipeline(registry: registry)
+        let orchestration = OrchestrationController(appState: appState, pipeline: orchestrationPipeline)
+        orchestrationController = orchestration
 
         let pipeline = AudioPipelineController(
             appState: appState,
             settings: settings,
-            conversationManager: conversationManager
+            conversationManager: conversationManager,
+            orchestrationController: orchestration
         )
         audioPipelineController = pipeline
 
@@ -110,6 +122,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func registerLLMConfigObserver() {
+        llmConfigObserver = NotificationCenter.default.addObserver(
+            forName: .llmConfigUpdated,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let appState = self?.appState else { return }
+            Task { @MainActor in
+                appState.refreshLLMStatus()
+            }
+        }
+    }
+
     private func maybeShowOnboarding() {
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: onboardingShownKey) else { return }
@@ -126,4 +151,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension Notification.Name {
     static let openOnboarding = Notification.Name("Prism.openOnboarding")
+    static let llmConfigUpdated = Notification.Name("Prism.llmConfigUpdated")
 }

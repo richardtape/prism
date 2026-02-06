@@ -16,4 +16,5 @@ enum SettingsKeys {
     static let conversationWindowSeconds = "conversation.windowSeconds"
     static let conversationMaxTurns = "conversation.maxTurns"
     static let conversationClosingPhrases = "conversation.closingPhrases"
+    static let skillsEnabledPrefix = "skills."
 }

@@ -8,7 +8,7 @@
 import Foundation
 
 /// Configuration payload for the LLM connection.
-public struct LLMConfig: Codable, Equatable {
+public struct LLMConfig: Codable, Equatable, Sendable {
     public var endpoint: String
     public var apiKey: String
     public var model: String?

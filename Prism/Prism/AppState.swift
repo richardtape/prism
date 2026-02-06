@@ -51,10 +51,37 @@ final class AppState: ObservableObject {
     /// Status text for errors or informational messages.
     @Published var statusMessage: String = ""
 
+    /// LLM configuration summary for the status panel.
+    @Published var llmStatusText: String = "Not configured"
+
+    /// Most recent LLM response for UI display.
+    @Published var lastResponse: String?
+
     /// Callback to open a conversation window manually.
     var onOpenConversationWindow: (() -> Void)?
 
     func openConversationWindow() {
         onOpenConversationWindow?()
+    }
+
+    /// Reloads the LLM configuration summary from disk.
+    @MainActor
+    func refreshLLMStatus() {
+        do {
+            let fileURL = try ConfigStore.defaultLocation()
+            let store = ConfigStore(fileURL: fileURL)
+            guard let config = try store.load() else {
+                llmStatusText = "Not configured"
+                return
+            }
+            let modelName = (config.model ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            if !modelName.isEmpty {
+                llmStatusText = modelName
+            } else {
+                llmStatusText = "Not configured"
+            }
+        } catch {
+            llmStatusText = "Not configured"
+        }
     }
 }
