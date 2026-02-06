@@ -6,6 +6,8 @@
 //
 
 import AppKit
+import Combine
+import PrismCore
 import SwiftUI
 
 /// App-level delegate responsible for accessory setup and the menu-bar status item.
@@ -16,6 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let onboardingShownKey = "onboarding.hasShown"
     private let appState = AppState()
     private var onboardingObserver: NSObjectProtocol?
+    private var listeningObserver: AnyCancellable?
+    private var audioPipelineController: AudioPipelineController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if isRunningTests {
@@ -27,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         configureStatusPanel()
         configureStatusItem()
+        configureAudioPipeline()
         registerOnboardingObserver()
         maybeShowOnboarding()
     }
@@ -35,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let onboardingObserver {
             NotificationCenter.default.removeObserver(onboardingObserver)
         }
+        listeningObserver?.cancel()
     }
 
     private func configureStatusPanel() {
@@ -52,6 +58,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         statusItem = item
+    }
+
+    private func configureAudioPipeline() {
+        let settings = AudioSettingsLoader().load()
+        let closingDetector = ClosingPhraseDetector(phrases: settings.closingPhrases)
+        let conversationManager = ConversationManager(
+            windowSeconds: settings.conversationWindowSeconds,
+            maxTurns: settings.conversationMaxTurns,
+            closingDetector: closingDetector
+        )
+
+        let pipeline = AudioPipelineController(
+            appState: appState,
+            settings: settings,
+            conversationManager: conversationManager
+        )
+        audioPipelineController = pipeline
+
+        appState.onOpenConversationWindow = { [weak self] in
+            self?.audioPipelineController?.openConversationWindow()
+        }
+
+        listeningObserver = appState.$isListening
+            .removeDuplicates()
+            .sink { [weak self] isListening in
+                if isListening {
+                    self?.audioPipelineController?.start()
+                } else {
+                    self?.audioPipelineController?.stop()
+                }
+            }
+
+        if appState.isListening {
+            audioPipelineController?.start()
+        }
     }
 
     @objc private func togglePanel() {

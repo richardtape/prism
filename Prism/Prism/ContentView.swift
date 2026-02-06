@@ -5,6 +5,7 @@
 //  Created by Rich Tape on 2026-02-05.
 //
 
+import PrismCore
 import SwiftUI
 
 /// Menu-bar panel content that surfaces app status and navigation affordances.
@@ -16,6 +17,9 @@ struct ContentView: View {
             header
             Divider()
             statusSection
+            audioMeter
+            Divider()
+            transcriptSection
             Divider()
             actions
         }
@@ -45,15 +49,53 @@ struct ContentView: View {
 
     private var statusSection: some View {
         VStack(alignment: .leading, spacing: 6) {
+            StatusRow(label: "State", value: appState.assistantStatus.displayName)
             StatusRow(label: "Listening", value: appState.isListening ? "On" : "Paused")
+            StatusRow(label: "Conversation", value: conversationStatusText)
             StatusRow(label: "Speaker", value: "--")
             StatusRow(label: "LLM", value: "Not configured")
         }
         .font(.subheadline)
     }
 
+    private var audioMeter: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Audio Level")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            AudioLevelMeterView(level: appState.audioLevel)
+        }
+    }
+
+    private var transcriptSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Last Transcript")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if let lastTranscript = appState.lastTranscript, !lastTranscript.isEmpty {
+                Text(lastTranscript)
+                    .font(.footnote)
+                    .lineLimit(2)
+            } else {
+                Text("Waiting for speech...")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+            if !appState.statusMessage.isEmpty {
+                Text(appState.statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
     private var actions: some View {
         HStack {
+            Button("Start Conversation") {
+                appState.openConversationWindow()
+            }
+            .buttonStyle(.bordered)
+            .disabled(appState.conversationState.isOpen)
             Spacer()
             SettingsLink {
                 Text("Settings")
@@ -64,6 +106,16 @@ struct ContentView: View {
     private func toggleListening() {
         // Phase 01+: allow skills or audio pipeline to drive this state.
         appState.isListening.toggle()
+    }
+
+    private var conversationStatusText: String {
+        let state = appState.conversationState
+        guard state.isOpen else { return "Closed" }
+        let turns = "\(state.turnsUsed)/\(state.maxTurns)"
+        if let remaining = state.timeRemaining() {
+            return "Open (\(turns), \(Int(remaining))s)"
+        }
+        return "Open (\(turns))"
     }
 }
 

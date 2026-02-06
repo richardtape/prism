@@ -18,7 +18,7 @@ final class StatusPanelController {
     init(rootView: AnyView) {
         hostingView = NSHostingView(rootView: rootView)
         panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 340, height: 240),
+            contentRect: NSRect(x: 0, y: 0, width: 340, height: 300),
             styleMask: [.titled, .fullSizeContentView, .utilityWindow],
             backing: .buffered,
             defer: true
