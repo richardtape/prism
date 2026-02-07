@@ -60,7 +60,7 @@ final class STTService {
     }
 
     /// Begins a new utterance recognition request.
-    func startUtterance() throws {
+    func startUtterance(utteranceID: UUID = UUID()) throws {
         guard let recognizer else {
             throw STTError.recognizerUnavailable
         }
@@ -72,7 +72,7 @@ final class STTService {
         recognitionRequest?.requiresOnDeviceRecognition = true
         recognitionRequest?.taskHint = .dictation
 
-        currentUtteranceID = UUID()
+        currentUtteranceID = utteranceID
 
         guard let recognitionRequest else { return }
         recognitionTask = recognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
@@ -115,6 +115,9 @@ final class STTService {
 
     private func handle(result: SFSpeechRecognitionResult?, error: Error?) {
         if let error {
+            if isNoSpeechError(error) {
+                return
+            }
             onError?("Speech recognition error: \(error.localizedDescription)")
             return
         }
@@ -145,5 +148,10 @@ final class STTService {
                 continuation.resume(returning: status)
             }
         }
+    }
+
+    private func isNoSpeechError(_ error: Error) -> Bool {
+        let message = (error as NSError).localizedDescription.lowercased()
+        return message.contains("no speech detected")
     }
 }

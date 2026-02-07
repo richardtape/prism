@@ -96,7 +96,11 @@ Mic -> AudioEngine -> VAD -> STT -> Speaker ID -> Wake Word -> LLM -> Action Pla
 **Reading Order**
 1. `overview.md` - this document
 2. `README.md`
-3. Phase document based on what you are working on
+3. Phase document based on what you are working on (including the living polish backlog in `phase-07-polish.md` and model training guidance in `phase-08-speaker-id-model.md`)
+
+**Polish Phase**
+- Phase 07 is a living backlog for UX/reliability refinements discovered during development.
+- Add new polish tasks to `phase-07-polish.md` as they come up so future work stays visible.
 
 **Assumptions**
 - Services are globally configured, memory is per-user

@@ -46,8 +46,7 @@ struct OnboardingView: View {
                 PermissionsChecklistView()
                     .padding(.top, 8)
             case .enrollment:
-                Text("Enrollment placeholders will live here.")
-                    .foregroundStyle(.secondary)
+                EnrollmentView()
             }
 
             Spacer()
@@ -78,4 +77,5 @@ struct OnboardingView: View {
 
 #Preview {
     OnboardingView()
+        .environmentObject(AppState())
 }

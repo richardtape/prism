@@ -48,6 +48,15 @@ final class AppState: ObservableObject {
     /// Most recent transcript update, if any.
     @Published var lastTranscript: String?
 
+    /// Current recognized speaker information, if any.
+    @Published var currentSpeakerName: String = "Unknown"
+    @Published var currentSpeakerID: UUID?
+    @Published var currentSpeakerConfidence: Float?
+    @Published var unknownSpeakerPrompt: UnknownSpeakerPromptState?
+
+    /// Per-utterance speaker match state used for gating follow-up actions.
+    var speakerMatchStates: [UUID: SpeakerMatchState] = [:]
+
     /// Status text for errors or informational messages.
     @Published var statusMessage: String = ""
 

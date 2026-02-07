@@ -12,10 +12,12 @@ import PrismCore
 final class OrchestrationController {
     private let appState: AppState
     private let pipeline: OrchestrationPipeline
+    private let sessionTracker: ConversationSessionTracker?
 
-    init(appState: AppState, pipeline: OrchestrationPipeline) {
+    init(appState: AppState, pipeline: OrchestrationPipeline, sessionTracker: ConversationSessionTracker? = nil) {
         self.appState = appState
         self.pipeline = pipeline
+        self.sessionTracker = sessionTracker
     }
 
     /// Handles a final transcript if the conversation window is open.
@@ -36,6 +38,9 @@ final class OrchestrationController {
                 await MainActor.run {
                     appState.lastResponse = response.message
                     appState.assistantStatus = .listening
+                }
+                if let sessionTracker {
+                    await sessionTracker.recordAssistantResponse(response.message)
                 }
             } catch {
                 await MainActor.run {

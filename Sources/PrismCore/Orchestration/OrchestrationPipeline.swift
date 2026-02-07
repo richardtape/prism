@@ -12,14 +12,12 @@ public struct OrchestrationPipeline {
     private let router: RouterAgent
     private let planner: PlannerAgent
     private let responder: ResponderAgent
-    private let memory: MemoryAgent
     private let registry: SkillRegistry
 
     public init(registry: SkillRegistry) {
         self.router = RouterAgent()
         self.planner = PlannerAgent(registry: registry)
         self.responder = ResponderAgent()
-        self.memory = MemoryAgent()
         self.registry = registry
     }
 
@@ -34,8 +32,6 @@ public struct OrchestrationPipeline {
         }
 
         let response = try await responder.run(input: input)
-        _ = try await memory.run(input: response)
-
         return (response, toolResults)
     }
 

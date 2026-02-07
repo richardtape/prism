@@ -30,6 +30,7 @@ struct AISettingsView: View {
     @State private var modelRefreshTask: Task<Void, Never>?
     @State private var statusResetTask: Task<Void, Never>?
     @State private var isFetchingModels = false
+    @State private var isLoadingConfig = false
     @FocusState private var focusedField: FocusField?
     @State private var lastFocusedField: FocusField?
 
@@ -95,17 +96,30 @@ struct AISettingsView: View {
     }
 
     private var modelPicker: some View {
-        Group {
+        let normalizedSelection = Binding(
+            get: { selectedModel.trimmingCharacters(in: .whitespacesAndNewlines) },
+            set: { selectedModel = $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        )
+
+        let picker = Group {
             if endpoint.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Picker("", selection: $selectedModel) {
-                    Text("Enter an AI Endpoint").tag("")
+                let options = modelOptionsIncludingSelection()
+                Picker("", selection: normalizedSelection) {
+                    if normalizedSelection.wrappedValue.isEmpty {
+                        Text("Enter an AI Endpoint").tag("")
+                    } else {
+                        Text(normalizedSelection.wrappedValue).tag(normalizedSelection.wrappedValue)
+                    }
+                    ForEach(options.filter { $0 != normalizedSelection.wrappedValue }, id: \.self) { model in
+                        Text(model).tag(model)
+                    }
                 }
                 .labelsHidden()
                 .accessibilityLabel("Model")
                 .disabled(true)
             } else {
                 let options = modelOptionsIncludingSelection()
-                Picker("", selection: $selectedModel) {
+                Picker("", selection: normalizedSelection) {
                     Text(isFetchingModels ? "Loading models..." : "Choose Model").tag("")
                     ForEach(options, id: \.self) { model in
                         Text(model).tag(model)
@@ -117,6 +131,8 @@ struct AISettingsView: View {
         }
         .pickerStyle(.menu)
         .frame(maxWidth: .infinity, alignment: .leading)
+
+        return picker
     }
 
     private func modelOptionsIncludingSelection() -> [String] {
@@ -139,7 +155,6 @@ struct AISettingsView: View {
         let trimmedEndpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedEndpoint.isEmpty else {
             modelOptions = []
-            selectedModel = ""
             return
         }
 
@@ -149,20 +164,22 @@ struct AISettingsView: View {
     }
 
     private func loadConfig() {
+        isLoadingConfig = true
         do {
             let fileURL = try ConfigStore.defaultLocation()
             let store = ConfigStore(fileURL: fileURL)
             guard let config = try store.load() else { return }
             endpoint = config.endpoint
             apiKey = config.apiKey
-            selectedModel = config.model ?? ""
-            refreshModels()
+            selectedModel = (config.model ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         } catch {
             statusText = "Unable to load config yet."
         }
+        isLoadingConfig = false
     }
 
     private func scheduleModelRefresh() {
+        guard !isLoadingConfig else { return }
         modelRefreshTask?.cancel()
         modelRefreshTask = Task {
             try? await Task.sleep(nanoseconds: 350_000_000)
@@ -175,14 +192,12 @@ struct AISettingsView: View {
         let trimmedEndpoint = endpoint.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedEndpoint.isEmpty else {
             modelOptions = []
-            selectedModel = ""
             return
         }
 
         let trimmedKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedKey.isEmpty else {
             modelOptions = []
-            selectedModel = ""
             statusText = "Enter an API key to fetch models."
             statusKind = .none
             return
@@ -197,15 +212,11 @@ struct AISettingsView: View {
             let client = LLMClient(configStore: store)
             let models = try await client.listModels(endpoint: trimmedEndpoint, apiKey: trimmedKey)
             modelOptions = models
-            if !selectedModel.isEmpty, !modelOptions.contains(selectedModel) {
-                selectedModel = ""
-            }
             statusText = "AI models refreshed."
             statusKind = .success
             scheduleStatusReset()
         } catch {
             modelOptions = []
-            selectedModel = ""
             statusText = "Unable to fetch models"
             statusKind = .error
             saveConfigIfPossible(suppressStatus: true)
@@ -229,7 +240,8 @@ struct AISettingsView: View {
         do {
             let fileURL = try ConfigStore.defaultLocation()
             let store = ConfigStore(fileURL: fileURL)
-            let config = LLMConfig(endpoint: endpoint, apiKey: apiKey, model: selectedModel)
+            let trimmedModel = selectedModel.trimmingCharacters(in: .whitespacesAndNewlines)
+            let config = LLMConfig(endpoint: endpoint, apiKey: apiKey, model: trimmedModel)
             try store.save(config)
             if !suppressStatus {
                 statusText = ""

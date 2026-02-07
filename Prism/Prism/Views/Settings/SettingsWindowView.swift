@@ -10,6 +10,7 @@ import SwiftUI
 /// Root container for the Settings window tabs.
 struct SettingsWindowView: View {
     @State private var selection: SettingsSection = .general
+    private let sidebarWidth: CGFloat = 220
 
     var body: some View {
         NavigationSplitView {
@@ -19,9 +20,13 @@ struct SettingsWindowView: View {
             }
             .listStyle(.sidebar)
             .toolbar(removing: .sidebarToggle)
-            .frame(minWidth: 200)
+            .frame(minWidth: sidebarWidth, idealWidth: sidebarWidth, maxWidth: sidebarWidth)
+            .navigationSplitViewColumnWidth(min: sidebarWidth, ideal: sidebarWidth, max: sidebarWidth)
         } detail: {
-            SettingsDetailView(section: selection)
+            ScrollView {
+                SettingsDetailView(section: selection)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         .frame(minWidth: 760, minHeight: 520)
     }

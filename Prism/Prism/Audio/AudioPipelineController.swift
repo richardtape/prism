@@ -17,20 +17,39 @@ final class AudioPipelineController {
     private let conversationManager: ConversationManager
     private let defaultConversationState: ConversationState
     private let orchestrationController: OrchestrationController?
+    private let speakerIDController: SpeakerIDController?
+    private let sessionTracker: ConversationSessionTracker?
+    private let memoryCoordinator: MemoryCoordinator?
 
     private var audioTask: Task<Void, Never>?
     private var sttTask: Task<Void, Never>?
     private var conversationTask: Task<Void, Never>?
     private var startupTask: Task<Void, Never>?
     private var isRunning = false
+    private var currentUtteranceID: UUID?
+    private var currentUtteranceFrames: [AudioFrame] = []
+    private var preRollFrames: [AudioFrame] = []
+    private var preRollDuration: TimeInterval = 0
+    private let preRollWindowSeconds: TimeInterval = 0.5
 
-    init(appState: AppState, settings: AudioSettings, conversationManager: ConversationManager, orchestrationController: OrchestrationController? = nil) {
+    init(
+        appState: AppState,
+        settings: AudioSettings,
+        conversationManager: ConversationManager,
+        orchestrationController: OrchestrationController? = nil,
+        speakerIDController: SpeakerIDController? = nil,
+        sessionTracker: ConversationSessionTracker? = nil,
+        memoryCoordinator: MemoryCoordinator? = nil
+    ) {
         self.appState = appState
         self.audioCaptureService = AudioCaptureService()
         self.vadService = VADService(configuration: settings.vadConfiguration)
         self.sttService = STTService()
         self.conversationManager = conversationManager
         self.orchestrationController = orchestrationController
+        self.speakerIDController = speakerIDController
+        self.sessionTracker = sessionTracker
+        self.memoryCoordinator = memoryCoordinator
         self.defaultConversationState = .closed(
             windowSeconds: settings.conversationWindowSeconds,
             maxTurns: settings.conversationMaxTurns
@@ -38,10 +57,17 @@ final class AudioPipelineController {
 
         conversationTask = Task { [weak self] in
             guard let self else { return }
+            var wasOpen = false
             for await state in conversationManager.stateStream {
                 await MainActor.run {
                     self.appState.conversationState = state
                 }
+                if wasOpen, !state.isOpen {
+                    if let summary = await sessionTracker?.closeSession() {
+                        memoryCoordinator?.handleSessionSummary(summary)
+                    }
+                }
+                wasOpen = state.isOpen
             }
         }
 
@@ -88,7 +114,14 @@ final class AudioPipelineController {
                             await MainActor.run {
                                 self.appState.lastResponse = nil
                             }
-                            self.orchestrationController?.handleFinalTranscript(event.text)
+                            let isConversationOpen = await MainActor.run { self.appState.conversationState.isOpen }
+                            if isConversationOpen {
+                                let speakerID = await MainActor.run { self.appState.currentSpeakerID }
+                                await self.sessionTracker?.recordUserUtterance(event.text, speakerID: speakerID)
+                                if await self.shouldHandleFinalTranscript(utteranceID: event.utteranceID) {
+                                    self.orchestrationController?.handleFinalTranscript(event.text)
+                                }
+                            }
                         }
                     }
                 }
@@ -100,20 +133,38 @@ final class AudioPipelineController {
                     for await frame in audioStream {
                         if Task.isCancelled { break }
                         let result = vadService.process(frame: frame)
+                        appendPreRollFrame(frame)
 
                         if result.didStartSpeech {
-                            try? sttService.startUtterance()
+                            let utteranceID = UUID()
+                            currentUtteranceID = utteranceID
+                            let preRollSnapshot = preRollFrames
+                            currentUtteranceFrames = preRollSnapshot
+                            try? sttService.startUtterance(utteranceID: utteranceID)
+                            for preRollFrame in preRollSnapshot {
+                                sttService.appendAudioFrame(preRollFrame)
+                            }
                             await MainActor.run {
                                 self.appState.assistantStatus = .processing
                             }
                         }
 
                         if result.isSpeech {
-                            sttService.appendAudioFrame(frame)
+                            if !result.didStartSpeech {
+                                sttService.appendAudioFrame(frame)
+                                if currentUtteranceID != nil {
+                                    currentUtteranceFrames.append(frame)
+                                }
+                            }
                         }
 
                         if result.didEndSpeech {
                             sttService.endUtterance()
+                            if let utteranceID = currentUtteranceID {
+                                speakerIDController?.processUtterance(id: utteranceID, frames: currentUtteranceFrames)
+                            }
+                            currentUtteranceID = nil
+                            currentUtteranceFrames = []
                             await MainActor.run {
                                 self.appState.assistantStatus = .listening
                             }
@@ -161,8 +212,16 @@ final class AudioPipelineController {
         audioCaptureService.stop()
         sttService.stopStreaming()
         vadService.reset()
+        speakerIDController?.cancelCurrentExtraction()
+        currentUtteranceID = nil
+        currentUtteranceFrames = []
+        preRollFrames = []
+        preRollDuration = 0
         Task {
             await conversationManager.closeWindow()
+        }
+        Task {
+            await sessionTracker?.reset()
         }
 
         Task { @MainActor in
@@ -176,5 +235,68 @@ final class AudioPipelineController {
         Task {
             await conversationManager.openWindow()
         }
+    }
+
+    private func shouldHandleFinalTranscript(utteranceID: UUID) async -> Bool {
+        if let matchState = await MainActor.run(body: { appState.speakerMatchStates[utteranceID] }) {
+            return await resolveMatchState(matchState, utteranceID: utteranceID)
+        }
+
+        try? await Task.sleep(nanoseconds: 150_000_000)
+        if let matchState = await MainActor.run(body: { appState.speakerMatchStates[utteranceID] }) {
+            return await resolveMatchState(matchState, utteranceID: utteranceID)
+        }
+
+        _ = await MainActor.run {
+            appState.speakerMatchStates[utteranceID] = .noMatch
+        }
+        return await resolveMatchState(.noMatch, utteranceID: utteranceID)
+    }
+
+    private func resolveMatchState(_ matchState: SpeakerMatchState, utteranceID: UUID) async -> Bool {
+        switch matchState {
+        case .matched(let match):
+            _ = await MainActor.run {
+                appState.speakerMatchStates.removeValue(forKey: utteranceID)
+            }
+            if match.isAboveThreshold {
+                return true
+            }
+            _ = await MainActor.run {
+                if appState.unknownSpeakerPrompt == nil {
+                    appState.unknownSpeakerPrompt = UnknownSpeakerPromptState(
+                        utteranceID: utteranceID,
+                        reason: "Speaker confidence below threshold."
+                    )
+                }
+            }
+            return false
+        case .noMatch:
+            _ = await MainActor.run {
+                appState.speakerMatchStates.removeValue(forKey: utteranceID)
+                if appState.unknownSpeakerPrompt == nil {
+                    appState.unknownSpeakerPrompt = UnknownSpeakerPromptState(
+                        utteranceID: utteranceID,
+                        reason: "Unknown speaker detected."
+                    )
+                }
+            }
+            return false
+        }
+    }
+
+    private func appendPreRollFrame(_ frame: AudioFrame) {
+        preRollFrames.append(frame)
+        preRollDuration += frameDuration(frame)
+
+        while preRollDuration > preRollWindowSeconds, !preRollFrames.isEmpty {
+            let removed = preRollFrames.removeFirst()
+            preRollDuration -= frameDuration(removed)
+        }
+    }
+
+    private func frameDuration(_ frame: AudioFrame) -> TimeInterval {
+        guard frame.sampleRate > 0 else { return 0.02 }
+        return Double(frame.samples.count) / frame.sampleRate
     }
 }

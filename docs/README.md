@@ -26,10 +26,14 @@ This folder contains implementation-ready phase documents for building Prism, a 
 - [Phase 04: Wake Word Hybrid](phase-04-wake-word.md)
 - [Phase 05: Skills MVP](phase-05-skills-mvp.md)
 - [Phase 06: Performance + Reliability](phase-06-performance-reliability.md)
+- [Phase 07: Polish (Living Backlog)](phase-07-polish.md)
+- [Phase 08: Speaker ID Model Training + Core ML Integration](phase-08-speaker-id-model.md)
 
 **Phase Status**
 - Phase 00: Foundation — Complete (February 6, 2026). See `phase-00-foundation.md` for adjustments and deviations.
 - Phase 01–06: Pending.
+- Phase 07: Polish — Active (living document; add items as discovered).
+- Phase 08: Speaker ID Model — Draft (offline training + Core ML integration plan).
 
 **Assumptions**
 - macOS 26.2, Xcode 26.2, Apple Silicon Mac mini.

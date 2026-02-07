@@ -11,6 +11,7 @@ import SwiftUI
 /// Menu-bar panel content that surfaces app status and navigation affordances.
 struct ContentView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var speakerProfiles: [SpeakerProfile] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -30,6 +31,27 @@ struct ContentView: View {
         .padding(.bottom, 16)
         .frame(width: 320, alignment: .leading)
         .ignoresSafeArea(.container, edges: .top)
+        .sheet(item: $appState.unknownSpeakerPrompt) { _ in
+            UnknownSpeakerPromptView(
+                profiles: speakerProfiles,
+                onSelect: { profile in
+                    appState.currentSpeakerName = profile.displayName
+                    appState.currentSpeakerID = profile.id
+                    appState.currentSpeakerConfidence = nil
+                    appState.unknownSpeakerPrompt = nil
+                },
+                onEnrollNew: {
+                    appState.unknownSpeakerPrompt = nil
+                    NotificationCenter.default.post(name: .openOnboarding, object: nil)
+                }
+            )
+            .onAppear {
+                loadSpeakerProfiles()
+            }
+            .onDisappear {
+                appState.unknownSpeakerPrompt = nil
+            }
+        }
     }
 
     private var header: some View {
@@ -54,7 +76,7 @@ struct ContentView: View {
             StatusRow(label: "State", value: appState.assistantStatus.displayName)
             StatusRow(label: "Listening", value: appState.isListening ? "On" : "Paused")
             StatusRow(label: "Conversation", value: conversationStatusText)
-            StatusRow(label: "Speaker", value: "--")
+            StatusRow(label: "Speaker", value: speakerStatusText)
             StatusRow(label: "LLM", value: appState.llmStatusText)
         }
         .font(.subheadline)
@@ -125,6 +147,24 @@ struct ContentView: View {
     private func toggleListening() {
         // Phase 01+: allow skills or audio pipeline to drive this state.
         appState.isListening.toggle()
+    }
+
+    private func loadSpeakerProfiles() {
+        do {
+            let queue = try Database().queue
+            let store = SpeakerProfileStore(queue: queue)
+            speakerProfiles = try store.fetchProfiles()
+        } catch {
+            speakerProfiles = []
+        }
+    }
+
+    private var speakerStatusText: String {
+        let name = appState.currentSpeakerName
+        if let confidence = appState.currentSpeakerConfidence {
+            return "\(name) (\(String(format: "%.2f", confidence)))"
+        }
+        return name
     }
 
     private var conversationStatusText: String {

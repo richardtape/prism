@@ -14,13 +14,17 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var statusPanelController: StatusPanelController?
-    private let onboardingWindowController = OnboardingWindowController()
     private let onboardingShownKey = "onboarding.hasShown"
     private let appState = AppState()
+    private lazy var onboardingWindowController = OnboardingWindowController(appState: appState)
     private var onboardingObserver: NSObjectProtocol?
     private var listeningObserver: AnyCancellable?
     private var audioPipelineController: AudioPipelineController?
     private var orchestrationController: OrchestrationController?
+    private var speakerIDController: SpeakerIDController?
+    private var speakerMatchController: SpeakerMatchController?
+    private var sessionTracker: ConversationSessionTracker?
+    private var memoryCoordinator: MemoryCoordinator?
     private var llmConfigObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -75,16 +79,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             maxTurns: settings.conversationMaxTurns,
             closingDetector: closingDetector
         )
-        let registry = SkillRegistry(queue: (try? Database().queue))
+        let queue = try? Database().queue
+        let registry = SkillRegistry(queue: queue)
         let orchestrationPipeline = OrchestrationPipeline(registry: registry)
-        let orchestration = OrchestrationController(appState: appState, pipeline: orchestrationPipeline)
+        let sessionTracker = ConversationSessionTracker()
+        self.sessionTracker = sessionTracker
+        if let queue {
+            memoryCoordinator = MemoryCoordinator(queue: queue)
+        }
+        let orchestration = OrchestrationController(appState: appState, pipeline: orchestrationPipeline, sessionTracker: sessionTracker)
         orchestrationController = orchestration
+
+        let speakerIDController = SpeakerIDController(extractor: StubSpeakerEmbeddingModel())
+        self.speakerIDController = speakerIDController
+        if let queue {
+            let speakerSettings = SpeakerIDSettingsLoader().load()
+            let store = SpeakerProfileStore(queue: queue)
+            speakerMatchController = SpeakerMatchController(
+                extractor: StubSpeakerEmbeddingModel(),
+                settings: speakerSettings,
+                store: store
+            )
+        }
+
+        speakerIDController.onEmbeddingExtracted = { [weak self] utteranceID, embedding in
+            guard let self else { return }
+            guard let matcher = self.speakerMatchController else { return }
+            do {
+                let match = try matcher.match(embedding: embedding)
+                Task { @MainActor in
+                    if let match, match.isAboveThreshold {
+                        self.appState.currentSpeakerName = match.displayName
+                        self.appState.currentSpeakerID = match.profileID
+                        self.appState.currentSpeakerConfidence = match.similarity
+                        self.appState.speakerMatchStates[utteranceID] = .matched(match)
+                    } else if let match {
+                        self.appState.currentSpeakerName = "Unknown"
+                        self.appState.currentSpeakerID = nil
+                        self.appState.currentSpeakerConfidence = match.similarity
+                        self.appState.speakerMatchStates[utteranceID] = .matched(match)
+                    } else {
+                        self.appState.currentSpeakerName = "Unknown"
+                        self.appState.currentSpeakerID = nil
+                        self.appState.currentSpeakerConfidence = nil
+                        self.appState.speakerMatchStates[utteranceID] = .noMatch
+                    }
+                }
+            } catch {
+                Task { @MainActor in
+                    self.appState.currentSpeakerName = "Unknown"
+                    self.appState.currentSpeakerID = nil
+                    self.appState.currentSpeakerConfidence = nil
+                    self.appState.speakerMatchStates[utteranceID] = .noMatch
+                }
+            }
+        }
 
         let pipeline = AudioPipelineController(
             appState: appState,
             settings: settings,
             conversationManager: conversationManager,
-            orchestrationController: orchestration
+            orchestrationController: orchestration,
+            speakerIDController: speakerIDController,
+            sessionTracker: sessionTracker,
+            memoryCoordinator: memoryCoordinator
         )
         audioPipelineController = pipeline
 
