@@ -3,6 +3,23 @@
 **Overview**
 Implement the first three skills (WeatherKit, MusicKit, Reminders) and wire permission gating into onboarding and settings.
 
+**Status (as of Feb 8, 2026)**
+Completed so far:
+- Step 1: PermissionManager + skill enablement UI (onboarding + settings).
+- Step 2: Weather skill + units + attribution.
+- Step 3: Music skill + AirPlay route picker.
+
+Pending:
+- Step 4: Reminders skill.
+- Step 5: Destructive confirmation flow (remove from playlist only).
+- Step 6: Skill result mapping + tool summaries + logging integration.
+
+**Implementation Notes / Deviations**
+- Music playlist editing (`addToPlaylist`/`removeFromPlaylist`) is stubbed to return an error on macOS because MusicKit library playlist editing APIs are unavailable on macOS. (To revisit if a viable AppleScript/MediaPlayer workaround is desired.)
+- AirPlay route picker uses `AVRoutePickerView` without `prioritizesVideoDevices` (unavailable on macOS).
+- Added a “Quit Prism” item in the menu bar popover to make permission reset testing feasible.
+- Weather location permission handling on macOS uses `requestWhenInUseAuthorization()` and `requestLocation()`; status mapping includes `.authorized`. A debug log line was added to help diagnose TCC behavior.
+
 **Scope**
 In scope:
 - WeatherKit skill with location permissions, current + minute + daily datasets
@@ -40,13 +57,37 @@ Out of scope:
 
 **Implementation Steps**
 1. Implement `PermissionManager` and wire toggles in onboarding and Settings > Skills (with status rows).
+   - Done. Files added/updated:
+     - `Sources/PrismCore/Skills/PermissionManager.swift`
+     - `Sources/PrismCore/Skills/SkillRegistry.swift` (permission gating)
+     - `Prism/Prism/Views/Settings/PermissionsChecklistView.swift`
+     - `Prism/Prism/Views/Settings/SkillsSettingsView.swift`
+     - `Prism/Prism/Persistence/Stores/SettingsKeys.swift` (skill enablement keys + weather units key)
+     - `Sources/PrismCore/Diagnostics/PrismLogger.swift` (skillInfo logging)
+     - Tests updated: `Tests/PrismCoreTests/SkillRegistryTests.swift`, `Tests/PrismCoreTests/OrchestrationPipelineTests.swift`
 Build/Run Gate: Clean (Cmd+Shift+K), Build (Cmd+B), Run (Cmd+R).
 2. Implement WeatherKit skill with location permission, current + minute + daily datasets, and free-form geocoding.
    - Add units setting (system default + override) and Weather attribution in Settings footer.
+   - Done. Files added/updated:
+     - `Sources/PrismCore/Skills/WeatherSkill.swift`
+     - `Sources/PrismCore/Skills/WeatherLocationProvider.swift`
+     - `Sources/PrismCore/Skills/WeatherUnits.swift`
+     - `Prism/Prism/Views/Settings/WeatherUnitsPickerView.swift`
+     - `Prism/Prism/Views/Settings/WeatherAttributionView.swift`
+     - Entitlements: `Prism/Prism/Prism.entitlements` (WeatherKit + location/reminders/calendars)
+     - Info.plist usage keys in `Prism/Prism.xcodeproj/project.pbxproj`
+     - Registration: `Prism/Prism/AppDelegate.swift`
 Build/Run Gate: Clean (Cmd+Shift+K), Build (Cmd+B), Run (Cmd+R).
 3. Implement MusicKit skill with authorization and ApplicationMusicPlayer playback.
    - Library-first search, fallback to catalog.
    - Add AirPlay route picker in onboarding, Settings > Audio, and popover.
+   - Done. Files added/updated:
+     - `Sources/PrismCore/Skills/MusicSkill.swift`
+     - `Prism/Prism/Views/AirPlayRoutePickerView.swift`
+     - `Prism/Prism/Views/Onboarding/OnboardingView.swift`
+     - `Prism/Prism/Views/Settings/AudioSettingsView.swift`
+     - `Prism/Prism/ContentView.swift`
+     - Registration: `Prism/Prism/AppDelegate.swift`
 Build/Run Gate: Clean (Cmd+Shift+K), Build (Cmd+B), Run (Cmd+R).
 4. Implement Reminders skill with EventKit authorization and CRUD.
    - Require list name or prompt for clarification (no default list).
