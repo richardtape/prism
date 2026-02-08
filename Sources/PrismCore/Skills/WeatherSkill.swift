@@ -47,31 +47,23 @@ public struct WeatherSkill: Skill {
         self.unitsKey = unitsKey
     }
 
-    public func execute(call: ToolCall) async throws -> ToolResult {
+    public func execute(call: ToolCall) async throws -> SkillResult {
         let args = ToolArguments(arguments: call.arguments)
         let action = args.string("action") ?? "get_forecast"
         guard action == "get_forecast" else {
-            return ToolResult(callID: call.id, output: .object([
-                "status": .string("error"),
-                "summary": .string("Unsupported weather action.")
-            ]))
+            return .error(summary: "Unsupported weather action.")
         }
 
         do {
             let locationProvider = WeatherLocationProvider()
             let resolved = try await locationProvider.resolve(locationQuery: args.string("location"))
-            let forecast = try await fetchForecast(for: resolved.coordinate, displayName: resolved.displayName)
-            return ToolResult(callID: call.id, output: forecast)
+            return try await fetchForecast(for: resolved.coordinate, displayName: resolved.displayName)
         } catch {
-            return ToolResult(callID: call.id, output: .object([
-                "status": .string("error"),
-                "summary": .string("I couldn't fetch weather data yet."),
-                "error": .string(error.localizedDescription)
-            ]))
+            return .error(summary: "I couldn't fetch weather data yet.", error: error)
         }
     }
 
-    private func fetchForecast(for location: CLLocation, displayName: String) async throws -> JSONValue {
+    private func fetchForecast(for location: CLLocation, displayName: String) async throws -> SkillResult {
         #if canImport(WeatherKit)
         if #available(macOS 13.0, *) {
             let service = WeatherService.shared
@@ -86,21 +78,18 @@ public struct WeatherSkill: Skill {
             let summaryParts = [currentSummary, minuteSummary, dailySummary].filter { !$0.isEmpty }
             let summary = summaryParts.joined(separator: " ")
 
-            return .object([
-                "status": .string("ok"),
-                "summary": .string(summary),
+            let data: JSONValue = .object([
                 "location": .string(displayName),
                 "current": formatter.currentPayload(weather.currentWeather),
                 "minute": weather.minuteForecast.map { formatter.minutePayload($0) } ?? .object([:]),
                 "daily": formatter.dailyPayload(weather.dailyForecast)
             ])
+
+            return .ok(summary: summary, data: data)
         }
         #endif
 
-        return .object([
-            "status": .string("error"),
-            "summary": .string("WeatherKit is unavailable on this system.")
-        ])
+        return .error(summary: "WeatherKit is unavailable on this system.")
     }
 
     private func loadUnits() -> WeatherUnits {

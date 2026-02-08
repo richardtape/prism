@@ -70,8 +70,8 @@ final class SkillRegistryTests: XCTestCase {
             parameters: .object(["type": .string("object")])
         ))
 
-        func execute(call: ToolCall) async throws -> ToolResult {
-            ToolResult(callID: call.id, output: .object([:]))
+        func execute(call: ToolCall) async throws -> SkillResult {
+            .ok(summary: "Mock")
         }
     }
 }

@@ -277,6 +277,7 @@
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Prism uses Apple Music to play and manage audio via skills.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "Prism uses calendar data to read and update reminders.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocationUsageDescription = "Prism uses your location to provide local weather forecasts.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Prism uses your location to provide local weather forecasts.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Prism needs microphone access to capture speech for transcription.";
 				INFOPLIST_KEY_NSRemindersUsageDescription = "Prism uses reminders to create and update tasks via skills.";
@@ -317,6 +318,7 @@
 				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Prism uses Apple Music to play and manage audio via skills.";
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "Prism uses calendar data to read and update reminders.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocationUsageDescription = "Prism uses your location to provide local weather forecasts.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Prism uses your location to provide local weather forecasts.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Prism needs microphone access to capture speech for transcription.";
 				INFOPLIST_KEY_NSRemindersUsageDescription = "Prism uses reminders to create and update tasks via skills.";

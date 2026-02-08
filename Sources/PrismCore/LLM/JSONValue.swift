@@ -65,4 +65,20 @@ public extension JSONValue {
         }
         return nil
     }
+
+    /// Convenience accessor for string values.
+    var stringValue: String? {
+        if case .string(let value) = self {
+            return value
+        }
+        return nil
+    }
+
+    /// Convenience accessor for boolean values.
+    var boolValue: Bool? {
+        if case .bool(let value) = self {
+            return value
+        }
+        return nil
+    }
 }

@@ -56,10 +56,33 @@ final class OrchestrationPipelineTests: XCTestCase {
 
         let pipeline = OrchestrationPipeline(registry: registry)
         let input = OrchestrationInput(userText: "create a note")
-        let (_, tools) = try await pipeline.run(input: input)
+        let (response, tools) = try await pipeline.run(input: input)
 
+        XCTAssertEqual(response.message, "Mocked tool run.")
         XCTAssertEqual(tools.count, 1)
-        XCTAssertEqual(tools.first?.output.objectValue?["ok"], .bool(true))
+        XCTAssertEqual(tools.first?.output.objectValue?["status"], .string("ok"))
+        XCTAssertEqual(tools.first?.output.objectValue?["summary"], .string("Mocked tool run."))
+    }
+
+    func testPendingConfirmationFlow() async throws {
+        let registry = SkillRegistry(queue: Self.queue, permissionManager: MockPermissionManager())
+        let mock = ConfirmingSkill(id: "remove_item")
+        registry.register(mock)
+
+        let store = SettingsStore(queue: Self.queue)
+        try store.writeValue("true", for: SkillRegistry.enabledKey(for: "remove_item"))
+
+        let pipeline = OrchestrationPipeline(registry: registry)
+        let firstInput = OrchestrationInput(userText: "create a note")
+        let (firstResponse, _) = try await pipeline.run(input: firstInput)
+
+        XCTAssertEqual(firstResponse.message, "Are you sure you want to remove this?")
+
+        let secondInput = OrchestrationInput(userText: "yes")
+        let (secondResponse, tools) = try await pipeline.run(input: secondInput)
+
+        XCTAssertEqual(secondResponse.message, "Removed.")
+        XCTAssertEqual(tools.first?.output.objectValue?["status"], .string("ok"))
     }
 
     private struct MockPermissionManager: PermissionManaging {
@@ -81,8 +104,26 @@ final class OrchestrationPipelineTests: XCTestCase {
             parameters: .object(["type": .string("object")])
         ))
 
-        func execute(call: ToolCall) async throws -> ToolResult {
-            ToolResult(callID: call.id, output: .object(["ok": .bool(true)]))
+        func execute(call: ToolCall) async throws -> SkillResult {
+            .ok(summary: "Mocked tool run.")
+        }
+    }
+
+    private struct ConfirmingSkill: Skill {
+        let id: String
+        let metadata = SkillMetadata(name: "Confirming", description: "Test")
+        let toolSchema = LLMToolDefinition(function: .init(
+            name: "remove_item",
+            description: "mock",
+            parameters: .object(["type": .string("object")])
+        ))
+
+        func execute(call: ToolCall) async throws -> SkillResult {
+            let args = ToolArguments(arguments: call.arguments)
+            if args.bool("confirmed") == true {
+                return .ok(summary: "Removed.")
+            }
+            return .pendingConfirmation(prompt: "Are you sure you want to remove this?")
         }
     }
 }

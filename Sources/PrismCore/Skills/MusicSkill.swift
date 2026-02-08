@@ -43,6 +43,10 @@ public struct MusicSkill: Skill {
                 "playlist": .object([
                     "type": .string("string"),
                     "description": .string("Target playlist name for add/remove.")
+                ]),
+                "confirmed": .object([
+                    "type": .string("boolean"),
+                    "description": .string("Set true when confirming a destructive removal.")
                 ])
             ]),
             "required": .array([.string("action")])
@@ -51,40 +55,41 @@ public struct MusicSkill: Skill {
 
     public init() {}
 
-    public func execute(call: ToolCall) async throws -> ToolResult {
+    public func execute(call: ToolCall) async throws -> SkillResult {
         #if canImport(MusicKit)
         if #available(macOS 14.0, *) {
             let args = ToolArguments(arguments: call.arguments)
             let action = args.string("action") ?? ""
             let query = args.string("query")
             let playlistName = args.string("playlist")
+            let confirmed = args.bool("confirmed") ?? false
 
             switch action {
             case "play":
-                return ToolResult(callID: call.id, output: try await handlePlay(query: query))
+                return try await handlePlay(query: query)
             case "pause":
-                return ToolResult(callID: call.id, output: handlePause())
+                return handlePause()
             case "resume":
-                return ToolResult(callID: call.id, output: try await handleResume())
+                return try await handleResume()
             case "skip":
-                return ToolResult(callID: call.id, output: try await handleSkip())
+                return try await handleSkip()
             case "shuffle":
-                return ToolResult(callID: call.id, output: try await handleShuffle(query: query))
+                return try await handleShuffle(query: query)
             case "addToPlaylist":
-                return ToolResult(callID: call.id, output: handleAddToPlaylist(query: query, playlist: playlistName))
+                return handleAddToPlaylist(query: query, playlist: playlistName)
             case "removeFromPlaylist":
-                return ToolResult(callID: call.id, output: handleRemoveFromPlaylist(query: query, playlist: playlistName))
+                return handleRemoveFromPlaylist(query: query, playlist: playlistName, confirmed: confirmed)
             default:
-                return ToolResult(callID: call.id, output: errorOutput("Unsupported music action."))
+                return errorOutput("Unsupported music action.")
             }
         }
         #endif
 
-        return ToolResult(callID: call.id, output: errorOutput("Apple Music is unavailable on this system."))
+        return errorOutput("Apple Music is unavailable on this system.")
     }
 
     @available(macOS 14.0, *)
-    private func handlePlay(query: String?) async throws -> JSONValue {
+    private func handlePlay(query: String?) async throws -> SkillResult {
         let player = ApplicationMusicPlayer.shared
         guard let query, !query.isEmpty else {
             try await player.play()
@@ -108,28 +113,28 @@ public struct MusicSkill: Skill {
     }
 
     @available(macOS 14.0, *)
-    private func handlePause() -> JSONValue {
+    private func handlePause() -> SkillResult {
         let player = ApplicationMusicPlayer.shared
         player.pause()
         return okOutput("Paused Apple Music.")
     }
 
     @available(macOS 14.0, *)
-    private func handleResume() async throws -> JSONValue {
+    private func handleResume() async throws -> SkillResult {
         let player = ApplicationMusicPlayer.shared
         try await player.play()
         return okOutput("Resuming Apple Music.")
     }
 
     @available(macOS 14.0, *)
-    private func handleSkip() async throws -> JSONValue {
+    private func handleSkip() async throws -> SkillResult {
         let player = ApplicationMusicPlayer.shared
         try await player.skipToNextEntry()
         return okOutput("Skipped to the next track.")
     }
 
     @available(macOS 14.0, *)
-    private func handleShuffle(query: String?) async throws -> JSONValue {
+    private func handleShuffle(query: String?) async throws -> SkillResult {
         let player = ApplicationMusicPlayer.shared
         if let query, !query.isEmpty {
             let libraryItem = try await searchLibrary(term: query)
@@ -157,7 +162,7 @@ public struct MusicSkill: Skill {
     }
 
     @available(macOS 14.0, *)
-    private func handleAddToPlaylist(query: String?, playlist: String?) -> JSONValue {
+    private func handleAddToPlaylist(query: String?, playlist: String?) -> SkillResult {
         guard let playlist, !playlist.isEmpty else {
             return clarificationOutput("Which playlist should I add this to?")
         }
@@ -168,12 +173,15 @@ public struct MusicSkill: Skill {
     }
 
     @available(macOS 14.0, *)
-    private func handleRemoveFromPlaylist(query: String?, playlist: String?) -> JSONValue {
+    private func handleRemoveFromPlaylist(query: String?, playlist: String?, confirmed: Bool) -> SkillResult {
         guard let playlist, !playlist.isEmpty else {
             return clarificationOutput("Which playlist should I remove this from?")
         }
         guard let query, !query.isEmpty else {
             return clarificationOutput("What should I remove from \(playlist)?")
+        }
+        guard confirmed else {
+            return pendingConfirmationOutput("Remove \"\(query)\" from \(playlist)?")
         }
         return errorOutput("Playlist editing isn't available on macOS yet.")
     }
@@ -227,25 +235,20 @@ public struct MusicSkill: Skill {
         }
     }
 
-    private func okOutput(_ summary: String) -> JSONValue {
-        .object([
-            "status": .string("ok"),
-            "summary": .string(summary)
-        ])
+    private func okOutput(_ summary: String) -> SkillResult {
+        .ok(summary: summary)
     }
 
-    private func errorOutput(_ summary: String) -> JSONValue {
-        .object([
-            "status": .string("error"),
-            "summary": .string(summary)
-        ])
+    private func errorOutput(_ summary: String) -> SkillResult {
+        .error(summary: summary)
     }
 
-    private func clarificationOutput(_ summary: String) -> JSONValue {
-        .object([
-            "status": .string("needs_clarification"),
-            "summary": .string(summary)
-        ])
+    private func clarificationOutput(_ summary: String) -> SkillResult {
+        .needsClarification(summary)
+    }
+
+    private func pendingConfirmationOutput(_ prompt: String) -> SkillResult {
+        .pendingConfirmation(prompt: prompt)
     }
 }
 

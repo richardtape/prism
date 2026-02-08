@@ -22,4 +22,12 @@ public struct ToolArguments {
         }
         return nil
     }
+
+    public func bool(_ key: String) -> Bool? {
+        guard let value = values[key] else { return nil }
+        if case .bool(let flag) = value {
+            return flag
+        }
+        return nil
+    }
 }

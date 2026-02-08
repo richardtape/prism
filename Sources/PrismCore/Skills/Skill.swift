@@ -48,5 +48,5 @@ public protocol Skill: Sendable {
     var metadata: SkillMetadata { get }
     var toolSchema: LLMToolDefinition { get }
 
-    func execute(call: ToolCall) async throws -> ToolResult
+    func execute(call: ToolCall) async throws -> SkillResult
 }

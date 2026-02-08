@@ -6,8 +6,10 @@
 //
 
 import AppKit
+import AVFoundation
 import Combine
 import PrismCore
+import Speech
 import SwiftUI
 
 /// App-level delegate responsible for accessory setup and the menu-bar status item.
@@ -34,6 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        appState.isListening = false
+
         // Accessory policy removes the Dock icon and main menu bar presence.
         NSApp.setActivationPolicy(.accessory)
 
@@ -46,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerAudioConfigObserver()
         appState.refreshLLMStatus()
         maybeShowOnboarding()
+        requestInitialPermissions()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -100,6 +105,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             registry.register(WeatherSkill(queue: queue, unitsKey: SettingsKeys.weatherUnits))
         }
         registry.register(MusicSkill())
+        registry.register(RemindersSkill())
         let orchestrationPipeline = OrchestrationPipeline(registry: registry)
         let sessionTracker = ConversationSessionTracker()
         self.sessionTracker = sessionTracker
@@ -253,6 +259,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         onboardingWindowController.show()
         defaults.set(true, forKey: onboardingShownKey)
+    }
+
+    private func requestInitialPermissions() {
+        Task { @MainActor in
+            _ = await requestMicrophoneAccess()
+            _ = await requestSpeechAccess()
+
+            let permissionManager = PermissionManager.shared
+            _ = await permissionManager.requestAccess(for: .weather)
+            _ = await permissionManager.requestAccess(for: .music)
+            _ = await permissionManager.requestAccess(for: .reminders)
+
+            appState.isListening = true
+        }
+    }
+
+    @MainActor
+    private func requestMicrophoneAccess() async -> Bool {
+        await withCheckedContinuation { continuation in
+            AVCaptureDevice.requestAccess(for: .audio) { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+    }
+
+    @MainActor
+    private func requestSpeechAccess() async -> SFSpeechRecognizerAuthorizationStatus {
+        await withCheckedContinuation { continuation in
+            SFSpeechRecognizer.requestAuthorization { status in
+                continuation.resume(returning: status)
+            }
+        }
     }
 
     private var isRunningTests: Bool {

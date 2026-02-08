@@ -98,14 +98,19 @@ struct PermissionsChecklistView: View {
         if isEnabled {
             let status = await permissionManager.requestAccess(for: permission)
             skillStates[index].status = status
+            let enabled = (status == .authorized)
+            skillStates[index].isEnabled = enabled
+            saveSkillEnabled(permission, isEnabled: enabled)
+        } else {
+            let status = permissionManager.status(for: permission)
+            skillStates[index].status = status
             if status == .authorized {
+                skillStates[index].isEnabled = true
                 saveSkillEnabled(permission, isEnabled: true)
+                statusText = "To revoke access, disable it in System Settings."
             } else {
-                skillStates[index].isEnabled = false
                 saveSkillEnabled(permission, isEnabled: false)
             }
-        } else {
-            saveSkillEnabled(permission, isEnabled: false)
         }
     }
 
@@ -115,12 +120,9 @@ struct PermissionsChecklistView: View {
         var states: [SkillPermissionState] = []
 
         for descriptor in descriptors {
-            let stored = readSkillEnabled(descriptor.permission)
             let status = permissionManager.status(for: descriptor.permission)
-            let enabled = stored && status == .authorized
-            if stored && status != .authorized && status != .notDetermined {
-                saveSkillEnabled(descriptor.permission, isEnabled: false)
-            }
+            let enabled = (status == .authorized)
+            saveSkillEnabled(descriptor.permission, isEnabled: enabled)
             states.append(
                 SkillPermissionState(
                     id: descriptor.permission,
@@ -144,19 +146,6 @@ struct PermissionsChecklistView: View {
             statusText = ""
         } catch {
             statusText = "Unable to save skill settings yet."
-        }
-    }
-
-    @MainActor
-    private func readSkillEnabled(_ permission: SkillPermission) -> Bool {
-        do {
-            let queue = try Database().queue
-            let store = SettingsStore(queue: queue)
-            let value = try store.readValue(for: permission.settingsKey)
-            return value == "true"
-        } catch {
-            statusText = "Unable to load skill settings yet."
-            return false
         }
     }
 
@@ -253,8 +242,8 @@ private struct SkillPermissionState: Identifiable {
     static let descriptors: [SkillDescriptor] = [
         SkillDescriptor(
             permission: .weather,
-            title: "Weather",
-            description: "Fetch local forecasts using WeatherKit."
+            title: "Location",
+            description: "Allow location access for local weather forecasts."
         ),
         SkillDescriptor(
             permission: .music,

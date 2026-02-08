@@ -18,7 +18,11 @@ public struct ResponderAgent: Agent {
     public init() {}
 
     public func run(input: OrchestrationInput) async throws -> ResponseResult {
-        let messages = buildMessages(from: input)
+        try await run(input: input, toolSummaries: [])
+    }
+
+    public func run(input: OrchestrationInput, toolSummaries: [String] = []) async throws -> ResponseResult {
+        let messages = buildMessages(from: input, toolSummaries: toolSummaries)
         let request = LLMRequest(
             model: "",
             messages: messages,
@@ -34,6 +38,9 @@ public struct ResponderAgent: Agent {
         } catch let error as LLMError {
             if case .invalidRequest = error {
                 PrismLogger.llmWarning("LLM config missing. Returning fallback response.")
+                if !toolSummaries.isEmpty {
+                    return ResponseResult(message: toolSummaries.joined(separator: " "))
+                }
                 return ResponseResult(message: "Heard: \(input.userText)")
             }
             PrismLogger.llmError("LLM error: \(error.localizedDescription)")
@@ -57,7 +64,7 @@ public struct ResponderAgent: Agent {
         return content.isEmpty ? "I don't have a response yet." : content
     }
 
-    private func buildMessages(from input: OrchestrationInput) -> [LLMMessage] {
+    private func buildMessages(from input: OrchestrationInput, toolSummaries: [String]) -> [LLMMessage] {
         var messages: [LLMMessage] = [
             LLMMessage(role: .system, content: Self.systemPrompt)
         ]
@@ -72,6 +79,16 @@ public struct ResponderAgent: Agent {
                !assistantText.isEmpty {
                 messages.append(LLMMessage(role: .assistant, content: assistantText))
             }
+        }
+
+        if !toolSummaries.isEmpty {
+            let summaryText = toolSummaries.joined(separator: "\n")
+            messages.append(
+                LLMMessage(
+                    role: .system,
+                    content: "Tool results:\n\(summaryText)"
+                )
+            )
         }
 
         let lastUser = messages.last(where: { $0.role == .user })?.content ?? ""

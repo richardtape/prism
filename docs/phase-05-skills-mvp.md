@@ -8,9 +8,7 @@ Completed so far:
 - Step 1: PermissionManager + skill enablement UI (onboarding + settings).
 - Step 2: Weather skill + units + attribution.
 - Step 3: Music skill + AirPlay route picker.
-
-Pending:
-- Step 4: Reminders skill.
+- Step 4: Reminders skill (EventKit CRUD with list/title clarification).
 - Step 5: Destructive confirmation flow (remove from playlist only).
 - Step 6: Skill result mapping + tool summaries + logging integration.
 
@@ -18,7 +16,10 @@ Pending:
 - Music playlist editing (`addToPlaylist`/`removeFromPlaylist`) is stubbed to return an error on macOS because MusicKit library playlist editing APIs are unavailable on macOS. (To revisit if a viable AppleScript/MediaPlayer workaround is desired.)
 - AirPlay route picker uses `AVRoutePickerView` without `prioritizesVideoDevices` (unavailable on macOS).
 - Added a “Quit Prism” item in the menu bar popover to make permission reset testing feasible.
-- Weather location permission handling on macOS uses `requestWhenInUseAuthorization()` and `requestLocation()`; status mapping includes `.authorized`. A debug log line was added to help diagnose TCC behavior.
+- Weather location permission handling on macOS uses `startUpdatingLocation()` to force prompts, plus debug logs for class/instance status. Added `NSLocationUsageDescription` for prompting reliability.
+- Startup permission preflight now requests core + skill permissions sequentially (microphone, dictation, location, music, reminders).
+- Skills settings now reflect OS permission state; toggles cannot disable OS-granted permissions (must be revoked in System Settings).
+- Reset Settings clears settings, memory entries, speaker profiles/embeddings, LLM config, and onboarding flag.
 
 **Scope**
 In scope:
@@ -91,11 +92,30 @@ Build/Run Gate: Clean (Cmd+Shift+K), Build (Cmd+B), Run (Cmd+R).
 Build/Run Gate: Clean (Cmd+Shift+K), Build (Cmd+B), Run (Cmd+R).
 4. Implement Reminders skill with EventKit authorization and CRUD.
    - Require list name or prompt for clarification (no default list).
+   - Done. Files added/updated:
+     - `Sources/PrismCore/Skills/RemindersSkill.swift`
+     - Registration: `Prism/Prism/AppDelegate.swift`
 Build/Run Gate: Clean (Cmd+Shift+K), Build (Cmd+B), Run (Cmd+R).
 5. Implement destructive confirmation flow for remove-from-playlist only.
+   - Done. Files added/updated:
+     - `Sources/PrismCore/Orchestration/ConfirmationParser.swift`
+     - `Sources/PrismCore/Orchestration/OrchestrationPipeline.swift`
+     - `Sources/PrismCore/Skills/MusicSkill.swift` (pending confirmation)
 Build/Run Gate: Clean (Cmd+Shift+K), Build (Cmd+B), Run (Cmd+R).
 6. Ensure skill registry exposes only enabled and authorized skills.
    - Log skill inputs/outputs in Xcode debug log.
+   - Done. Files added/updated:
+     - `Sources/PrismCore/Skills/SkillResult.swift`
+     - `Sources/PrismCore/Skills/Skill.swift`
+     - `Sources/PrismCore/Skills/WeatherSkill.swift`
+     - `Sources/PrismCore/Skills/RemindersSkill.swift`
+     - `Sources/PrismCore/Skills/MusicSkill.swift`
+     - `Sources/PrismCore/Skills/ToolArguments.swift`
+     - `Sources/PrismCore/LLM/JSONValue.swift`
+     - `Sources/PrismCore/Agents/ResponderAgent.swift`
+     - `Sources/PrismCore/Orchestration/OrchestrationPipeline.swift`
+     - `Prism/Prism/Views/Settings/PermissionsChecklistView.swift`
+     - Tests updated: `Tests/PrismCoreTests/OrchestrationPipelineTests.swift`, `Tests/PrismCoreTests/SkillRegistryTests.swift`
 Build/Run Gate: Clean (Cmd+Shift+K), Build (Cmd+B), Run (Cmd+R).
 
 **Tests**
