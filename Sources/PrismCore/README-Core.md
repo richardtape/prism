@@ -1,3 +1,3 @@
 # PrismCore Sources
 
-Core settings and configuration storage types used across the app.
+Core settings, configuration storage, and shared pipeline helpers used across the app.

@@ -69,4 +69,8 @@ actor ConversationSessionTracker {
     func reset() {
         currentSession = nil
     }
+
+    func currentTurns() -> [MemorySessionSummary.Turn] {
+        currentSession?.turns ?? []
+    }
 }

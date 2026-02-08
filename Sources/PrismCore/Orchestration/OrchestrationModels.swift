@@ -10,9 +10,11 @@ import Foundation
 /// Input for the full orchestration pipeline.
 public struct OrchestrationInput: Sendable, Equatable {
     public let userText: String
+    public let conversationTurns: [MemorySessionSummary.Turn]
 
-    public init(userText: String) {
+    public init(userText: String, conversationTurns: [MemorySessionSummary.Turn] = []) {
         self.userText = userText
+        self.conversationTurns = conversationTurns
     }
 }
 

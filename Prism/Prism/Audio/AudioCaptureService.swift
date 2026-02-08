@@ -28,6 +28,9 @@ final class AudioCaptureService {
     /// Callback for audio level updates in normalized 0...1 range.
     var onAudioLevel: ((Double) -> Void)?
 
+    /// Callback for raw audio buffers used by downstream analyzers.
+    var onAudioBuffer: ((AVAudioPCMBuffer, AVAudioTime) -> Void)?
+
     /// Starts capturing audio and returns a stream of audio frames.
     func start() async throws -> AsyncStream<AudioFrame> {
         if let audioStream, isRunning {
@@ -104,6 +107,10 @@ final class AudioCaptureService {
         let normalizedLevel = min(max(Double(rms) * 4.0, 0), 1)
         onAudioLevel?(normalizedLevel)
 
+        if let onAudioBuffer, let bufferCopy = copyBuffer(buffer) {
+            onAudioBuffer(bufferCopy, time)
+        }
+
         let frame = AudioFrame(
             samples: samples,
             rms: rms,
@@ -114,6 +121,27 @@ final class AudioCaptureService {
         frameIndex += 1
 
         continuation?.yield(frame)
+    }
+
+    private func copyBuffer(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        let format = buffer.format
+        let frameLength = buffer.frameLength
+        guard let copied = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: buffer.frameCapacity) else {
+            return nil
+        }
+        copied.frameLength = frameLength
+
+        guard let source = buffer.floatChannelData, let destination = copied.floatChannelData else {
+            return nil
+        }
+
+        let channelCount = Int(format.channelCount)
+        let samples = Int(frameLength)
+        for channel in 0..<channelCount {
+            destination[channel].update(from: source[channel], count: samples)
+        }
+
+        return copied
     }
 
     private static func calculateRMS(samples: [Float]) -> Float {

@@ -14,6 +14,14 @@ struct AudioSettings {
     let conversationWindowSeconds: TimeInterval
     let conversationMaxTurns: Int
     let closingPhrases: [String]
+    let sttLocaleIdentifier: String
+
+    var sttLocale: Locale {
+        if sttLocaleIdentifier.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return Locale.current
+        }
+        return Locale(identifier: sttLocaleIdentifier)
+    }
 }
 
 /// Loads audio settings from the SettingsStore with sensible defaults.
@@ -32,7 +40,8 @@ struct AudioSettingsLoader {
             vadConfiguration: .default,
             conversationWindowSeconds: 15,
             conversationMaxTurns: 5,
-            closingPhrases: Self.defaultClosingPhrases
+            closingPhrases: Self.defaultClosingPhrases,
+            sttLocaleIdentifier: ""
         )
 
         do {
@@ -51,6 +60,8 @@ struct AudioSettingsLoader {
                     value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
                 } ?? defaults.closingPhrases
 
+            let localeIdentifier = try store.readValue(for: SettingsKeys.sttLocaleIdentifier) ?? defaults.sttLocaleIdentifier
+
             return AudioSettings(
                 vadConfiguration: VADConfiguration(
                     rmsThreshold: threshold,
@@ -59,7 +70,8 @@ struct AudioSettingsLoader {
                 ),
                 conversationWindowSeconds: max(1, windowSeconds),
                 conversationMaxTurns: max(1, maxTurns),
-                closingPhrases: phrases.filter { !$0.isEmpty }
+                closingPhrases: phrases.filter { !$0.isEmpty },
+                sttLocaleIdentifier: localeIdentifier
             )
         } catch {
             return defaults

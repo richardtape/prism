@@ -26,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sessionTracker: ConversationSessionTracker?
     private var memoryCoordinator: MemoryCoordinator?
     private var llmConfigObserver: NSObjectProtocol?
+    private var wakeWordConfigObserver: NSObjectProtocol?
+    private var audioConfigObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if isRunningTests {
@@ -40,6 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         configureAudioPipeline()
         registerOnboardingObserver()
         registerLLMConfigObserver()
+        registerWakeWordConfigObserver()
+        registerAudioConfigObserver()
         appState.refreshLLMStatus()
         maybeShowOnboarding()
     }
@@ -50,6 +54,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         if let llmConfigObserver {
             NotificationCenter.default.removeObserver(llmConfigObserver)
+        }
+        if let wakeWordConfigObserver {
+            NotificationCenter.default.removeObserver(wakeWordConfigObserver)
+        }
+        if let audioConfigObserver {
+            NotificationCenter.default.removeObserver(audioConfigObserver)
         }
         listeningObserver?.cancel()
     }
@@ -73,7 +83,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func configureAudioPipeline() {
         let settings = AudioSettingsLoader().load()
-        let closingDetector = ClosingPhraseDetector(phrases: settings.closingPhrases)
+        let wakeWordSettings = WakeWordSettingsLoader().load()
+        let fillerTokens = Self.closingFillerTokens(using: wakeWordSettings)
+        let closingDetector = ClosingPhraseDetector(
+            phrases: settings.closingPhrases,
+            fillerTokens: fillerTokens
+        )
         let conversationManager = ConversationManager(
             windowSeconds: settings.conversationWindowSeconds,
             maxTurns: settings.conversationMaxTurns,
@@ -145,6 +160,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             memoryCoordinator: memoryCoordinator
         )
         audioPipelineController = pipeline
+        pipeline.updateWakeWordSettings(wakeWordSettings)
 
         appState.onOpenConversationWindow = { [weak self] in
             self?.audioPipelineController?.openConversationWindow()
@@ -163,6 +179,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if appState.isListening {
             audioPipelineController?.start()
         }
+    }
+
+    private static func closingFillerTokens(using settings: WakeWordSettings) -> [String] {
+        let acknowledgements = ["ok", "okay", "alright"]
+        let aliasTokens = settings.aliases
+            .flatMap { ClosingPhraseDetector.normalize($0).split(whereSeparator: { $0.isWhitespace }) }
+            .map(String.init)
+        return acknowledgements + aliasTokens
     }
 
     @objc private func togglePanel() {
@@ -193,6 +217,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func registerWakeWordConfigObserver() {
+        wakeWordConfigObserver = NotificationCenter.default.addObserver(
+            forName: .wakeWordConfigUpdated,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                let settings = WakeWordSettingsLoader().load()
+                self.audioPipelineController?.updateWakeWordSettings(settings)
+            }
+        }
+    }
+
+    private func registerAudioConfigObserver() {
+        audioConfigObserver = NotificationCenter.default.addObserver(
+            forName: .audioConfigUpdated,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            let settings = AudioSettingsLoader().load()
+            self.audioPipelineController?.updateSTTLocale(identifier: settings.sttLocaleIdentifier)
+        }
+    }
+
     private func maybeShowOnboarding() {
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: onboardingShownKey) else { return }
@@ -210,4 +260,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 extension Notification.Name {
     static let openOnboarding = Notification.Name("Prism.openOnboarding")
     static let llmConfigUpdated = Notification.Name("Prism.llmConfigUpdated")
+    static let wakeWordConfigUpdated = Notification.Name("Prism.wakeWordConfigUpdated")
+    static let audioConfigUpdated = Notification.Name("Prism.audioConfigUpdated")
 }

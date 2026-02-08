@@ -5,21 +5,30 @@
 //  Created by Rich Tape on 2026-02-06.
 //
 
+import AVFoundation
 import Foundation
 import PrismCore
+import SoundAnalysis
+import Speech
 
 /// Coordinates audio capture, VAD gating, STT, and conversation window updates.
 final class AudioPipelineController {
     private let appState: AppState
     private let audioCaptureService: AudioCaptureService
     private let vadService: VADService
-    private let sttService: STTService
+    private var sttService: STTService
     private let conversationManager: ConversationManager
     private let defaultConversationState: ConversationState
     private let orchestrationController: OrchestrationController?
     private let speakerIDController: SpeakerIDController?
     private let sessionTracker: ConversationSessionTracker?
     private let memoryCoordinator: MemoryCoordinator?
+    private var sttLocaleIdentifier: String
+    private var wakeWordSettings: WakeWordSettings?
+    private var wakeWordTextDetector: WakeWordTextDetector?
+    private var wakeWordService: WakeWordService?
+    private var wakeWordRequest: SNClassifySoundRequest?
+    private var wakeWordAnalyzerRunning = false
 
     private var audioTask: Task<Void, Never>?
     private var sttTask: Task<Void, Never>?
@@ -44,12 +53,20 @@ final class AudioPipelineController {
         self.appState = appState
         self.audioCaptureService = AudioCaptureService()
         self.vadService = VADService(configuration: settings.vadConfiguration)
-        self.sttService = STTService()
+        let resolvedLocale = SpeechLocaleResolver.resolveOnDeviceLocale(preferredIdentifier: settings.sttLocaleIdentifier)
+        self.sttLocaleIdentifier = resolvedLocale.identifier
+        self.sttService = STTService(locale: resolvedLocale.locale)
         self.conversationManager = conversationManager
         self.orchestrationController = orchestrationController
         self.speakerIDController = speakerIDController
         self.sessionTracker = sessionTracker
         self.memoryCoordinator = memoryCoordinator
+        if resolvedLocale.usedFallback {
+            let appStateRef = appState
+            Task { @MainActor in
+                appStateRef.statusMessage = "Using on-device speech recognition for \(resolvedLocale.displayName)."
+            }
+        }
         self.defaultConversationState = .closed(
             windowSeconds: settings.conversationWindowSeconds,
             maxTurns: settings.conversationMaxTurns
@@ -76,14 +93,11 @@ final class AudioPipelineController {
                 self?.appState.audioLevel = level
             }
         }
-
-        sttService.onError = { [weak self] message in
-            Task { @MainActor in
-                self?.appState.statusMessage = message
-                self?.appState.assistantStatus = .paused
-                self?.appState.isListening = false
-            }
+        audioCaptureService.onAudioBuffer = { [weak self] buffer, time in
+            self?.handleAudioBuffer(buffer, time: time)
         }
+
+        configureSTTErrorHandler()
     }
 
     func start() {
@@ -109,18 +123,25 @@ final class AudioPipelineController {
                         await MainActor.run {
                             self.appState.lastTranscript = event.text
                         }
-                        await self.conversationManager.acceptUtterance(event: event)
-                        if event.isFinal {
-                            await MainActor.run {
-                                self.appState.lastResponse = nil
+                        var wakeWordMatch: WakeWordTextMatch?
+                        if event.isFinal, let detector = self.wakeWordTextDetector {
+                            wakeWordMatch = detector.detect(
+                                in: event.text,
+                                confidence: event.confidence,
+                                timestamp: event.timestamp
+                            )
+                            if let match = wakeWordMatch {
+                                await self.openWakeWordSession(for: match.event)
                             }
-                            let isConversationOpen = await MainActor.run { self.appState.conversationState.isOpen }
-                            if isConversationOpen {
-                                let speakerID = await MainActor.run { self.appState.currentSpeakerID }
-                                await self.sessionTracker?.recordUserUtterance(event.text, speakerID: speakerID)
-                                if await self.shouldHandleFinalTranscript(utteranceID: event.utteranceID) {
-                                    self.orchestrationController?.handleFinalTranscript(event.text)
-                                }
+                        }
+
+                        await self.conversationManager.acceptUtterance(event: event)
+
+                        if event.isFinal {
+                            if let match = wakeWordMatch {
+                                await self.handleWakeWordTranscript(match.strippedText, utteranceID: event.utteranceID)
+                            } else if await self.conversationManager.snapshot().isOpen {
+                                await self.handleWakeWordTranscript(event.text, utteranceID: event.utteranceID)
                             }
                         }
                     }
@@ -213,6 +234,8 @@ final class AudioPipelineController {
         sttService.stopStreaming()
         vadService.reset()
         speakerIDController?.cancelCurrentExtraction()
+        wakeWordService?.stop()
+        wakeWordAnalyzerRunning = false
         currentUtteranceID = nil
         currentUtteranceFrames = []
         preRollFrames = []
@@ -234,6 +257,63 @@ final class AudioPipelineController {
     func openConversationWindow() {
         Task {
             await conversationManager.openWindow()
+        }
+    }
+
+    func updateSTTLocale(identifier: String) {
+        let trimmed = identifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedLocale = SpeechLocaleResolver.resolveOnDeviceLocale(preferredIdentifier: trimmed)
+
+        if resolvedLocale.identifier == sttLocaleIdentifier {
+            if resolvedLocale.usedFallback {
+                Task { @MainActor in
+                    appState.statusMessage = "Using on-device speech recognition for \(resolvedLocale.displayName)."
+                }
+            }
+            return
+        }
+
+        sttLocaleIdentifier = resolvedLocale.identifier
+        let wasRunning = isRunning
+        if wasRunning {
+            stop()
+        }
+
+        sttService = STTService(locale: resolvedLocale.locale)
+        configureSTTErrorHandler()
+
+        if wasRunning {
+            start()
+        }
+
+        if resolvedLocale.usedFallback {
+            Task { @MainActor in
+                appState.statusMessage = "Using on-device speech recognition for \(resolvedLocale.displayName)."
+            }
+        }
+    }
+
+    func updateWakeWordSettings(_ settings: WakeWordSettings) {
+        wakeWordSettings = settings
+
+        if settings.isEnabled {
+            let config = WakeWordConfig(
+                aliases: settings.aliases,
+                sensitivity: settings.sensitivity,
+                minConfidence: settings.minConfidence
+            )
+            wakeWordTextDetector = WakeWordTextDetector(config: config)
+            configureWakeWordService(with: settings)
+            audioCaptureService.onAudioBuffer = { [weak self] buffer, time in
+                self?.handleAudioBuffer(buffer, time: time)
+            }
+        } else {
+            wakeWordTextDetector = nil
+            wakeWordService?.stop()
+            wakeWordService = nil
+            wakeWordRequest = nil
+            wakeWordAnalyzerRunning = false
+            audioCaptureService.onAudioBuffer = nil
         }
     }
 
@@ -298,5 +378,101 @@ final class AudioPipelineController {
     private func frameDuration(_ frame: AudioFrame) -> TimeInterval {
         guard frame.sampleRate > 0 else { return 0.02 }
         return Double(frame.samples.count) / frame.sampleRate
+    }
+
+    private func configureWakeWordService(with settings: WakeWordSettings) {
+        let minConfidence = acousticMinConfidence(for: settings)
+        let configuration = WakeWordService.Configuration(
+            targetLabels: WakeWordModelDefaults.labels,
+            minConfidence: minConfidence,
+            cooldownSeconds: WakeWordModelDefaults.cooldownSeconds
+        )
+
+        wakeWordService = WakeWordService(configuration: configuration)
+        wakeWordService?.onDetect = { [weak self] detection in
+            guard let self else { return }
+            let event = WakeWordEvent(
+                source: .acoustic,
+                confidence: detection.confidence,
+                timestamp: detection.timestamp
+            )
+            Task {
+                await self.openWakeWordSession(for: event)
+            }
+        }
+
+        do {
+            wakeWordRequest = try WakeWordService.loadRequest(modelName: WakeWordModelDefaults.modelName)
+            wakeWordAnalyzerRunning = false
+        } catch {
+            wakeWordRequest = nil
+            wakeWordService = nil
+            wakeWordAnalyzerRunning = false
+            Task { @MainActor in
+                if self.appState.statusMessage.isEmpty {
+                    self.appState.statusMessage = "Wake-word model unavailable. Text fallback still works."
+                }
+            }
+        }
+    }
+
+    private func handleAudioBuffer(_ buffer: AVAudioPCMBuffer, time: AVAudioTime) {
+        guard isRunning else { return }
+        guard let settings = wakeWordSettings, settings.isEnabled else { return }
+        guard let wakeWordService, let wakeWordRequest else { return }
+
+        if !wakeWordAnalyzerRunning {
+            do {
+                try wakeWordService.start(request: wakeWordRequest, format: buffer.format)
+                wakeWordAnalyzerRunning = true
+            } catch {
+                wakeWordAnalyzerRunning = false
+                return
+            }
+        }
+
+        wakeWordService.process(buffer: buffer, time: time)
+    }
+
+    private func openWakeWordSession(for event: WakeWordEvent) async {
+        await conversationManager.openWindow()
+        await sessionTracker?.reset()
+        await MainActor.run {
+            appState.lastResponse = nil
+            appState.unknownSpeakerPrompt = nil
+        }
+    }
+
+    private func handleWakeWordTranscript(_ text: String, utteranceID: UUID) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        await MainActor.run {
+            appState.lastResponse = nil
+        }
+
+        let speakerID = await MainActor.run { appState.currentSpeakerID }
+        await sessionTracker?.recordUserUtterance(trimmed, speakerID: speakerID)
+
+        if await shouldHandleFinalTranscript(utteranceID: utteranceID) {
+            orchestrationController?.handleFinalTranscript(trimmed)
+        }
+    }
+
+    private func acousticMinConfidence(for settings: WakeWordSettings) -> Double {
+        let base = WakeWordConfig.clamp01(settings.minConfidence)
+        let sensitivity = WakeWordConfig.clamp01(settings.sensitivity)
+        let adjustment = (0.5 - sensitivity) * 0.2
+        return WakeWordConfig.clamp01(base + adjustment)
+    }
+
+    private func configureSTTErrorHandler() {
+        sttService.onError = { [weak self] message in
+            Task { @MainActor in
+                self?.appState.statusMessage = message
+                self?.appState.assistantStatus = .paused
+                self?.appState.isListening = false
+            }
+        }
     }
 }

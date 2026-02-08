@@ -33,7 +33,8 @@ final class OrchestrationController {
 
         Task {
             do {
-                let input = OrchestrationInput(userText: trimmed)
+                let turns = await sessionTracker?.currentTurns() ?? []
+                let input = OrchestrationInput(userText: trimmed, conversationTurns: turns)
                 let (response, _) = try await pipeline.run(input: input)
                 await MainActor.run {
                     appState.lastResponse = response.message
