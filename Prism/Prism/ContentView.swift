@@ -5,6 +5,7 @@
 //  Created by Rich Tape on 2026-02-05.
 //
 
+import AppKit
 import PrismCore
 import SwiftUI
 
@@ -59,6 +60,8 @@ struct ContentView: View {
             Text("Prism")
                 .font(.headline)
             Spacer()
+            AirPlayRoutePickerView()
+                .frame(width: 20, height: 20)
             Button {
                 toggleListening()
             } label: {
@@ -141,6 +144,10 @@ struct ContentView: View {
             SettingsLink {
                 Text("Settings")
             }
+            Button("Quit Prism") {
+                NSApplication.shared.terminate(nil)
+            }
+            .buttonStyle(.bordered)
         }
     }
 

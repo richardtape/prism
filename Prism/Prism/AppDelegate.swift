@@ -96,6 +96,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let queue = try? Database().queue
         let registry = SkillRegistry(queue: queue)
+        if let queue {
+            registry.register(WeatherSkill(queue: queue, unitsKey: SettingsKeys.weatherUnits))
+        }
+        registry.register(MusicSkill())
         let orchestrationPipeline = OrchestrationPipeline(registry: registry)
         let sessionTracker = ConversationSessionTracker()
         self.sessionTracker = sessionTracker

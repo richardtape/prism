@@ -30,6 +30,14 @@ Out of scope:
    - Auto-advance to the next prompt after a sample is captured.
    - Keep a short pre-roll so the first word is captured reliably.
    Build/Run Gate: Clean (Cmd+Shift+K), Build (Cmd+B), Run (Cmd+R).
+2. Add active-state styling for the menu-bar status item when the popover is open.
+   - Match native macOS behavior with a pill-shaped highlighted background behind the status item icon.
+   - Ensure the highlight appears only while the popover is visible and resets when closed.
+   Build/Run Gate: Clean (Cmd+Shift+K), Build (Cmd+B), Run (Cmd+R).
+3. Rework permission toggle UX to keep Settings open and centralize first-run permissions in onboarding.
+   - Keep Settings window open after permission prompts complete.
+   - On first launch, defer all permission prompts until the onboarding flow guides the user step-by-step.
+   Build/Run Gate: Clean (Cmd+Shift+K), Build (Cmd+B), Run (Cmd+R).
 
 **Tests**
 - Manual: enroll with low-volume speech, pauses, and quick successive prompts.

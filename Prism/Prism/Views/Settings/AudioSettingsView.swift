@@ -132,6 +132,20 @@ struct AudioSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                Divider()
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("AirPlay Output")
+                        .font(.headline)
+
+                    Text("Choose an AirPlay device for audio playback.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    AirPlayRoutePickerView()
+                        .frame(width: 28, height: 28)
+                }
             }
         }
         .task {

@@ -12,9 +12,11 @@ import GRDB
 public final class SkillRegistry {
     private var skills: [String: Skill] = [:]
     private let queue: DatabaseQueue?
+    private let permissionManager: PermissionManaging
 
-    public init(queue: DatabaseQueue?) {
+    public init(queue: DatabaseQueue?, permissionManager: PermissionManaging = PermissionManager.shared) {
         self.queue = queue
+        self.permissionManager = permissionManager
     }
 
     /// Registers a skill, replacing any existing entry for the same id.
@@ -32,7 +34,15 @@ public final class SkillRegistry {
         guard let queue else { return [] }
         let store = SettingsStore(queue: queue)
         return skills.values.filter { skill in
-            (try? store.readValue(for: Self.enabledKey(for: skill.id))) == "true"
+            guard (try? store.readValue(for: Self.enabledKey(for: skill.id))) == "true" else {
+                return false
+            }
+
+            guard let permission = SkillPermission(rawValue: skill.id) else {
+                return true
+            }
+
+            return permissionManager.status(for: permission) == .authorized
         }
     }
 

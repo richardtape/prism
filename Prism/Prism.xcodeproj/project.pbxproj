@@ -274,8 +274,12 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Prism uses Apple Music to play and manage audio via skills.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "Prism uses calendar data to read and update reminders.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Prism uses your location to provide local weather forecasts.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Prism needs microphone access to capture speech for transcription.";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "Prism uses reminders to create and update tasks via skills.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Prism needs speech recognition to transcribe your requests.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -310,8 +314,12 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSAppleMusicUsageDescription = "Prism uses Apple Music to play and manage audio via skills.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "Prism uses calendar data to read and update reminders.";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Prism uses your location to provide local weather forecasts.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Prism needs microphone access to capture speech for transcription.";
+				INFOPLIST_KEY_NSRemindersUsageDescription = "Prism uses reminders to create and update tasks via skills.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Prism needs speech recognition to transcribe your requests.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

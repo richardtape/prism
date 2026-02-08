@@ -36,7 +36,7 @@ final class SkillRegistryTests: XCTestCase {
     }
 
     func testEnabledSkillsRespectSettings() throws {
-        let registry = SkillRegistry(queue: Self.queue)
+        let registry = SkillRegistry(queue: Self.queue, permissionManager: MockPermissionManager())
         let skillA = MockSkill(id: "alpha")
         let skillB = MockSkill(id: "beta")
 
@@ -49,6 +49,16 @@ final class SkillRegistryTests: XCTestCase {
 
         let enabled = registry.enabledSkills()
         XCTAssertEqual(enabled.map { $0.id }, ["alpha"])
+    }
+
+    private struct MockPermissionManager: PermissionManaging {
+        func status(for permission: SkillPermission) -> PermissionStatus {
+            .authorized
+        }
+
+        func requestAccess(for permission: SkillPermission) async -> PermissionStatus {
+            .authorized
+        }
     }
 
     private struct MockSkill: Skill {

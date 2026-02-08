@@ -45,6 +45,17 @@ struct OnboardingView: View {
                     .foregroundStyle(.secondary)
                 PermissionsChecklistView()
                     .padding(.top, 8)
+                Divider()
+                    .padding(.vertical, 8)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("AirPlay Output")
+                        .font(.headline)
+                    Text("Select an AirPlay speaker for Apple Music playback.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    AirPlayRoutePickerView()
+                        .frame(width: 28, height: 28)
+                }
             case .enrollment:
                 EnrollmentView()
             }

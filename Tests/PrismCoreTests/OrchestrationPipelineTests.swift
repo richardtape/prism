@@ -36,7 +36,7 @@ final class OrchestrationPipelineTests: XCTestCase {
     }
 
     func testPipelineReturnsResponse() async throws {
-        let registry = SkillRegistry(queue: Self.queue)
+        let registry = SkillRegistry(queue: Self.queue, permissionManager: MockPermissionManager())
         let pipeline = OrchestrationPipeline(registry: registry)
 
         let input = OrchestrationInput(userText: "hello")
@@ -47,7 +47,7 @@ final class OrchestrationPipelineTests: XCTestCase {
     }
 
     func testPipelineExecutesEnabledTool() async throws {
-        let registry = SkillRegistry(queue: Self.queue)
+        let registry = SkillRegistry(queue: Self.queue, permissionManager: MockPermissionManager())
         let mock = MockSkill(id: "create_note")
         registry.register(mock)
 
@@ -60,6 +60,16 @@ final class OrchestrationPipelineTests: XCTestCase {
 
         XCTAssertEqual(tools.count, 1)
         XCTAssertEqual(tools.first?.output.objectValue?["ok"], .bool(true))
+    }
+
+    private struct MockPermissionManager: PermissionManaging {
+        func status(for permission: SkillPermission) -> PermissionStatus {
+            .authorized
+        }
+
+        func requestAccess(for permission: SkillPermission) async -> PermissionStatus {
+            .authorized
+        }
     }
 
     private struct MockSkill: Skill {

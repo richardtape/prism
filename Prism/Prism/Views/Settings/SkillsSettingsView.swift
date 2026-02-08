@@ -7,15 +7,26 @@
 
 import SwiftUI
 
-/// Skills settings placeholders for later configuration work.
+/// Skills settings for enabling tool access and reviewing permission status.
 struct SkillsSettingsView: View {
     var body: some View {
         SettingsSectionContainer(title: "Skills") {
-            Text("Skill settings placeholders will live here.")
+            Text("Enable skills and grant access to the services Prism controls.")
                 .foregroundStyle(.secondary)
 
-            PermissionsChecklistView()
+            PermissionsChecklistView(showCore: false, showSkills: true)
                 .padding(.top, 8)
+
+            Divider()
+                .padding(.vertical, 8)
+
+            Text("Weather")
+                .font(.headline)
+
+            WeatherUnitsPickerView()
+
+            WeatherAttributionView()
+                .padding(.top, 4)
         }
     }
 }
